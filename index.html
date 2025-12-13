@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Drone Viewer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<!-- Mapbox CSS -->
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.css" rel="stylesheet" />
+<link href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.1/mapbox-gl-geocoder.css" rel="stylesheet" />
+
+<style>
+  /* --- BASIC PAGE & MAP --- */
+  body { margin: 0; font-family: system-ui, sans-serif; }
+  #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+
+  /* --- LEFT CONTROL PANEL --- */
+  .panel {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    width: 280px;
+    background: rgba(255,255,255,0.95);
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    z-index: 2;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  }
+  .panel h3 { margin: 0 0 10px 0; font-size: 15px; }
+  .panel label { display: block; margin-bottom: 10px; }
+  .panel select, .panel input[type="range"] { width: 100%; }
+
+  /* Container for dynamic type checkboxes */
+  #type-checkboxes {
+    max-height: 120px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 6px;
+    margin-top: 4px;
+  }
+
+  /* --- SEARCH BAR TOP RIGHT --- */
+  #geocoder {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: min(340px, 60%);
+    z-index: 2;
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+<div id="geocoder"></div>
+
+<!-- ---------- FILTER PANEL ---------- -->
+<div class="panel">
+  <h3>Filters</h3>
+
+  <!-- Filter p_no_fly (adjust option values to match your data exactly) -->
+  <label>
+    No-fly zone (p_no_fly):
+    <select id="nfz-filter">
+      <option value="all">All</option>
+      <option value="true">Inside NFZ</option>
+      <option value="false">Outside NFZ</option>
+    </select>
+  </label>
+
+  <!-- Filter p_h120m (adjust values to your data: true/false, 1/0, etc.) -->
+  <label>
+    Above 120m (p_h120m):
+    <select id="h120-filter">
+      <option value="all">All</option>
+      <option value="true">Yes</option>
+      <option value="false">No</option>
+    </select>
+  </label>
+
+  <!-- Dynamic type checkboxes (read from data) -->
+  <label>
+    Type:
+    <div id="type-checkboxes">
+      <!-- Filled automatically from GeoJSON "type" values -->
+    </div>
+  </label>
+
+  <!-- Time filter based on tijd_start, assumes "HH:MM" format -->
+  <label>
+    Start time (tijd_start):
+      <input type="range" id="time-slider" min="0" max="24" step="1" value="0" />
+      <div style="font-size:12px">Hour ≥ <span id="time-value">0</span></div>
+  </label>
+
+  <!-- Basemap selector -->
+  <label>
+    Basemap:
+    <select id="basemap-selector">
+      <option value="mapbox://styles/mapbox/streets-v12">Streets</option>
+      <option value="mapbox://styles/mapbox/light-v11">Light</option>
+      <option value="mapbox://styles/mapbox/dark-v11">Dark</option>
+      <option value="mapbox://styles/mapbox/satellite-v9">Satellite</option>
+    </select>
+  </label>
+</div>
+
+<!-- Mapbox JS -->
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.js"></script>
+<script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.1/mapbox-gl-geocoder.min.js"></script>
+
+<script>
+/* ==========================================================
+   1) BASIC MAP SETUP
+   ========================================================== */
+
+mapboxgl.accessToken = "pk.eyJ1IjoidGltbWFwcGVyIiwiYSI6ImNrcWpjbDBnbzAwbTYyd3IwM2c0NDRlZ3MifQ.VlYKg7MxpFRu3frs1aGhOQ"; // <-- put your Mapbox token here
+
+let currentStyle = "mapbox://styles/mapbox/streets-v12";
+
+// Keep track of selected types (from checkboxes)
+let selectedTypes = [];
+
+// Create map
+const map = new mapboxgl.Map({
+  container: "map",
+  style: currentStyle,
+  center: [4.9, 52.37],   // default center (Amsterdam)
+  zoom: 10
+});
+
+// Zoom / rotation controls
+map.addControl(new mapboxgl.NavigationControl(), "bottom-right");
+
+// Address search bar (geocoder)
+const geocoder = new MapboxGeocoder({
+  accessToken: mapboxgl.accessToken,
+  mapboxgl: mapboxgl,
+  placeholder: "Search address"
+});
+document.getElementById("geocoder").appendChild(geocoder.onAdd(map));
+
+
+/* ==========================================================
+   2) LOAD DATA + ADD LAYER
+   ========================================================== */
+
+const GEOJSON_URL = "drones_lines3_wg84.geojson"; // <-- ensure filename matches your repo
+
+map.on("load", () => {
+
+  // Add source
+  map.addSource("drone-lines", {
+    type: "geojson",
+    data: GEOJSON_URL
+  });
+
+  // Add line layer
+  map.addLayer({
+    id: "drone-lines-layer",
+    type: "line",
+    source: "drone-lines",
+    paint: {
+      "line-color": "#e63946",
+      "line-width": 3,
+      "line-opacity": 0.9
+    }
+  });
+
+  // Popups on click
+  map.on("click", "drone-lines-layer", (e) => {
+    const p = e.features[0].properties;
+
+    // Popup content – edit fields as needed
+    const html = `
+      <div style="font-size:13px">
+        <strong>${p.type || "Drone flight"}</strong><br>
+        <strong>Time start:</strong> ${p.tijd_start || "-"}<br>
+        <strong>No-fly:</strong> ${p.p_no_fly || "-"}<br>
+        <strong>Above 120m:</strong> ${p.p_h120m || "-"}
+      </div>
+    `;
+    new mapboxgl.Popup()
+      .setLngLat(e.lngLat)
+      .setHTML(html)
+      .addTo(map);
+  });
+
+  map.on("mouseenter", "drone-lines-layer", () => {
+    map.getCanvas().style.cursor = "pointer";
+  });
+  map.on("mouseleave", "drone-lines-layer", () => {
+    map.getCanvas().style.cursor = "";
+  });
+
+  // Once the map is ready, read types from the GeoJSON
+  loadTypesFromGeoJSON();
+});
+
+
+/* ==========================================================
+   3) DYNAMIC TYPE CHECKBOXES
+   ========================================================== */
+
+// Fetch GeoJSON once and create a checkbox for each unique "type"
+function loadTypesFromGeoJSON() {
+  fetch(GEOJSON_URL)
+    .then(resp => resp.json())
+    .then(data => {
+      const typeSet = new Set();
+
+      // Collect unique types
+      (data.features || []).forEach(f => {
+        const t = f.properties && f.properties.type;
+        if (t !== undefined && t !== null && t !== "") {
+          typeSet.add(String(t));
+        }
+      });
+
+      const types = Array.from(typeSet).sort();
+      buildTypeCheckboxes(types);
+    })
+    .catch(err => {
+      console.error("Error loading GeoJSON for type list:", err);
+    });
+}
+
+// Build the checkboxes in the panel
+function buildTypeCheckboxes(types) {
+  const container = document.getElementById("type-checkboxes");
+  container.innerHTML = ""; // clear any existing content
+
+  // Default: all types selected
+  selectedTypes = [...types];
+
+  types.forEach(typeVal => {
+    const safeId = "type-" + typeVal.replace(/\s+/g, "-").replace(/[^a-zA-Z0-9_-]/g, "");
+    const label = document.createElement("label");
+    label.style.display = "block";
+    label.style.marginBottom = "3px";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.id = safeId;
+    checkbox.value = typeVal;
+    checkbox.checked = true; // initially all on
+
+    const span = document.createElement("span");
+    span.textContent = " " + typeVal;
+
+    label.appendChild(checkbox);
+    label.appendChild(span);
+    container.appendChild(label);
+
+    // Update selectedTypes + filters when checkbox changes
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) {
+        if (!selectedTypes.includes(typeVal)) selectedTypes.push(typeVal);
+      } else {
+        selectedTypes = selectedTypes.filter(t => t !== typeVal);
+      }
+      applyFilters();
+    });
+  });
+
+  // Apply filter once at start
+  applyFilters();
+}
+
+
+/* ==========================================================
+   4) FILTER LOGIC (p_no_fly, p_h120m, type, tijd_start)
+   ========================================================== */
+
+const nfzEl = document.getElementById("nfz-filter");
+const h120El = document.getElementById("h120-filter");
+const timeSliderEl = document.getElementById("time-slider");
+const timeValueEl = document.getElementById("time-value");
+
+// Update filters when dropdowns change
+nfzEl.addEventListener("change", applyFilters);
+h120El.addEventListener("change", applyFilters);
+
+// Time slider: update label and filter
+timeSliderEl.addEventListener("input", () => {
+  timeValueEl.textContent = timeSliderEl.value;
+  applyFilters();
+});
+
+// Build combined Mapbox filter and apply it to the layer
+function applyFilters() {
+  const nfzVal = nfzEl.value;               // "all" or a value (e.g. "true"/"false")
+  const h120Val = h120El.value;             // "all" or a value
+  const timeMin = Number(timeSliderEl.value); // hour minimum from slider
+
+  const filter = ["all"];
+
+  // Filter p_no_fly (adjust if your values are e.g. "ja"/"nee")
+  if (nfzVal !== "all") {
+    filter.push(["==", ["get", "p_no_fly"], nfzVal]);
+  }
+
+  // Filter p_h120m
+  if (h120Val !== "all") {
+    filter.push(["==", ["get", "p_h120m"], h120Val]);
+  }
+
+  // Filter type using selectedTypes from checkboxes
+  if (selectedTypes.length > 0) {
+    filter.push([
+      "in",
+      ["get", "type"],
+      ["literal", selectedTypes]
+    ]);
+  } else {
+    // If no types are selected, show nothing
+    filter.push(["==", ["get", "type"], "__no_such_type__"]);
+  }
+
+  // Time filter: tijd_start hour >= slider
+  // Assumes tijd_start like "14:32" → we take first 2 chars as hour
+  filter.push([
+    ">=",
+    ["to-number", ["slice", ["get", "tijd_start"], 0, 2]],
+    timeMin
+  ]);
+
+  // Apply filter to layer if it exists
+  if (map.getLayer("drone-lines-layer")) {
+    map.setFilter("drone-lines-layer", filter);
+  }
+}
+
+
+/* ==========================================================
+   5) BASEMAP SWITCHER
+   ========================================================== */
+
+document.getElementById("basemap-selector").addEventListener("change", (e) => {
+  currentStyle = e.target.value;
+
+  // Change map style
+  map.setStyle(currentStyle);
+
+  // After style reloads, re-add source & layer and reapply filters
+  map.once("styledata", () => {
+    // Re-add source
+    if (!map.getSource("drone-lines")) {
+      map.addSource("drone-lines", {
+        type: "geojson",
+        data: GEOJSON_URL
+      });
+    }
+
+    // Re-add layer
+    if (!map.getLayer("drone-lines-layer")) {
+      map.addLayer({
+        id: "drone-lines-layer",
+        type: "line",
+        source: "drone-lines",
+        paint: {
+          "line-color": "#e63946",
+          "line-width": 3,
+          "line-opacity": 0.9
+        }
+      });
+    }
+
+    // Reapply filters with current settings
+    applyFilters();
+  });
+});
+</script>
+</body>
+</html>
