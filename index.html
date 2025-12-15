@@ -98,7 +98,7 @@
   mapboxgl.accessToken = "pk.eyJ1IjoidGltbWFwcGVyIiwiYSI6ImNrcWpjbDBnbzAwbTYyd3IwM2c0NDRlZ3MifQ.VlYKg7MxpFRu3frs1aGhOQ";
 
   // 🌍 Default basemap style
-  let currentStyle = "mapbox://styles/mapbox/streets-v12";
+  let currentStyle = "mapbox://styles/mapbox/dark-v11";
 
   // 📁 GeoJSON filenames (same folder as index.html)
   const DRONES_GEOJSON_URL = "drones_lines3_wg84.geojson";
@@ -129,6 +129,9 @@
   /* ----------------------------------------------------
      No-fly zones layer (background)
      ---------------------------------------------------- */
+/* ----------------------------------------------------
+   No-fly zones layer (background)
+   ---------------------------------------------------- */
   function addNoFlyLayer() {
     // Source for no-fly polygons
     if (!map.getSource("nofly-zones")) {
@@ -137,8 +140,8 @@
         data: NOFLY_GEOJSON_URL
       });
     }
-
-    // Filled polygon (blue, 0.1 opacity)
+  
+    // Filled polygon (blue, 0.2 opacity)
     if (!map.getLayer("nofly-zones-fill")) {
       map.addLayer({
         id: "nofly-zones-fill",
@@ -146,11 +149,11 @@
         source: "nofly-zones",
         paint: {
           "fill-color": "#1e90ff",
-          "fill-opacity": 0.1
+          "fill-opacity": 0.2
         }
       });
     }
-
+  
     // Dotted outline (blue, 1px)
     if (!map.getLayer("nofly-zones-outline")) {
       map.addLayer({
@@ -171,6 +174,9 @@
   /* ----------------------------------------------------
      Drone lines layer (foreground)
      ---------------------------------------------------- */
+/* ----------------------------------------------------
+   Drone lines layer (foreground)
+   ---------------------------------------------------- */
   function addDroneLayer() {
     // Source for drone lines
     if (!map.getSource("drone-lines")) {
@@ -179,33 +185,32 @@
         data: DRONES_GEOJSON_URL
       });
     }
-
-    // Purple lines (1px, opacity 0.3, additive effect via blend mode)
+  
+    // Lines on top of no-fly layers
     if (!map.getLayer("drone-lines-layer")) {
       map.addLayer({
         id: "drone-lines-layer",
         type: "line",
         source: "drone-lines",
         paint: {
-          "line-color": "#fc2ddd",
+          "line-color": "#fc2ddd",  // your pink
           "line-width": 1,
-          "line-opacity": 0.3
+          "line-opacity": 0.3       // overlapping strokes naturally look brighter
         },
         layout: {
           "line-cap": "round",
-          "line-join": "round",
-          "line-blend-mode": "screen" // overlaps look brighter
+          "line-join": "round"
         }
       });
     }
-
+  
     // Add popup + hover only once
     if (!droneEventsAdded) {
       droneEventsAdded = true;
-
+  
       map.on("click", "drone-lines-layer", (e) => {
         const p = e.features[0].properties || {};
-
+  
         const html = `
           <div style="font-size:13px; line-height:1.4;">
             <strong>Type drone:</strong> ${p.drone_type || "-"}<br>
@@ -215,13 +220,13 @@
             <strong>afstand in m.:</strong> ${p.lengte_m || "-"}
           </div>
         `;
-
+  
         new mapboxgl.Popup()
           .setLngLat(e.lngLat)
           .setHTML(html)
           .addTo(map);
       });
-
+  
       map.on("mouseenter", "drone-lines-layer", () => {
         map.getCanvas().style.cursor = "pointer";
       });
@@ -230,7 +235,7 @@
       });
     }
   }
-
+  
 
   /* ----------------------------------------------------
      Initial load: add both layers + prepare date filter
