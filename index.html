@@ -54,9 +54,9 @@
   <div class="panel">
     <label for="basemap-select">Basemap:</label>
     <select id="basemap-select">
+      <option value="mapbox://styles/mapbox/dark-v11" selected>Dark</option>
       <option value="mapbox://styles/mapbox/streets-v12">Streets</option>
       <option value="mapbox://styles/mapbox/light-v11">Light</option>
-      <option value="mapbox://styles/mapbox/dark-v11" selected>Dark</option>
       <option value="mapbox://styles/mapbox/satellite-v9">Satellite</option>
     </select>
   
@@ -251,6 +251,8 @@
      Basemap selector – keep layers + filter after style change
      ---------------------------------------------------- */
   const basemapSelect = document.getElementById("basemap-select");
+  basemapSelect.value = currentStyle; // make dropdown match the current style
+
 
   basemapSelect.addEventListener("change", (event) => {
     const newStyle = event.target.value;
