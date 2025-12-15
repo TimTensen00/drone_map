@@ -6,13 +6,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <!-- Mapbox CSS -->
-  <link
-    href="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.css"
-    rel="stylesheet"
-  />
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.css" rel="stylesheet" />
 
   <style>
-    /* Fullscreen map */
     body {
       margin: 0;
       font-family: system-ui, sans-serif;
@@ -24,7 +20,7 @@
       width: 100%;
     }
 
-    /* Simple control panel for basemap selector */
+    /* Control panel */
     .panel {
       position: absolute;
       top: 10px;
@@ -35,113 +31,93 @@
       font-size: 14px;
       z-index: 2;
       box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+      width: 180px;
     }
     .panel label {
       display: block;
       margin-bottom: 4px;
     }
-    .panel select {
+    .panel select,
+    .panel input[type="range"] {
       width: 100%;
     }
   </style>
 </head>
 <body>
 
-  <!-- Map container -->
-  <div id="map"></div>
+<div id="map"></div>
 
-  <!-- Basemap selector UI -->
-  <div class="panel">
-    <label for="basemap-select">Basemap:</label>
-    <select id="basemap-select">
-      <option value="mapbox://styles/mapbox/dark-v11" selected>Dark</option>
-      <option value="mapbox://styles/mapbox/streets-v12">Streets</option>
-      <option value="mapbox://styles/mapbox/light-v11">Light</option>
-      <option value="mapbox://styles/mapbox/satellite-v9">Satellite</option>
-    </select>
-  
-    <!-- Date range filter on tijd_start -->
-    <div style="margin-top:8px;">
-      <label>Datum (tijd_start):</label>
-      <div style="font-size:12px; margin-bottom:2px;">
-        Van: <span id="date-min-label">–</span>
-      </div>
-      <input
-        type="range"
-        id="date-min-slider"
-        min="0"
-        max="0"
-        step="1"
-        value="0"
-      />
-  
-      <div style="font-size:12px; margin:6px 0 2px;">
-        Tot: <span id="date-max-label">–</span>
-      </div>
-      <input
-        type="range"
-        id="date-max-slider"
-        min="0"
-        max="0"
-        step="1"
-        value="0"
-      />
-    </div>
+<!-- Basemap + Date Filter Panel -->
+<div class="panel">
+  <label for="basemap-select">Basemap:</label>
+  <select id="basemap-select">
+    <option value="mapbox://styles/mapbox/streets-v12">Streets</option>
+    <option value="mapbox://styles/mapbox/light-v11">Light</option>
+    <option value="mapbox://styles/mapbox/dark-v11" selected>Dark</option>
+    <option value="mapbox://styles/mapbox/satellite-v9">Satellite</option>
+  </select>
+
+  <div style="margin-top:10px;">
+    <label>Datum (tijd_start):</label>
+
+    <div style="font-size:12px;">Van: <span id="date-min-label">–</span></div>
+    <input type="range" id="date-min-slider" min="0" max="0" value="0" step="1" />
+
+    <div style="font-size:12px; margin-top:6px;">Tot: <span id="date-max-label">–</span></div>
+    <input type="range" id="date-max-slider" min="0" max="0" value="0" step="1" />
   </div>
+</div>
 
-
-  <!-- Mapbox JS -->
-  <script src="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.js"></script>
+<!-- Mapbox JS -->
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.js"></script>
 
 <script>
-  // 🔑 Mapbox public token
-  mapboxgl.accessToken = "pk.eyJ1IjoidGltbWFwcGVyIiwiYSI6ImNrcWpjbDBnbzAwbTYyd3IwM2c0NDRlZ3MifQ.VlYKg7MxpFRu3frs1aGhOQ";
+  /* --------------------------------------------------
+     SETTINGS
+  -------------------------------------------------- */
 
-  // 🌍 Default basemap style
+  mapboxgl.accessToken =
+    "pk.eyJ1IjoidGltbWFwcGVyIiwiYSI6ImNrcWpjbDBnbzAwbTYyd3IwM2c0NDRlZ3MifQ.VlYKg7MxpFRu3frs1aGhOQ";
+
   let currentStyle = "mapbox://styles/mapbox/dark-v11";
 
-  // 📁 GeoJSON filenames (same folder as index.html)
   const DRONES_GEOJSON_URL = "drones_lines3_wg84.geojson";
-  const NOFLY_GEOJSON_URL  = "noflyzones.geojson";
+  const NOFLY_GEOJSON_URL = "noflyzones.geojson";
 
-  // 📅 Date filter state for tijd_start
-  let uniqueDates = []; // array of "YYYY-MM-DD"
+  let uniqueDates = [];
   const dateMinSlider = document.getElementById("date-min-slider");
   const dateMaxSlider = document.getElementById("date-max-slider");
-  const dateMinLabel  = document.getElementById("date-min-label");
-  const dateMaxLabel  = document.getElementById("date-max-label");
+  const dateMinLabel = document.getElementById("date-min-label");
+  const dateMaxLabel = document.getElementById("date-max-label");
 
-  // Flag so we don't attach click handlers multiple times
   let droneEventsAdded = false;
+  let selectedFeatureId = null;
 
-  // 🗺️ Create the map, centered on The Hague
+  /* --------------------------------------------------
+     MAP INIT
+  -------------------------------------------------- */
+
   const map = new mapboxgl.Map({
     container: "map",
     style: currentStyle,
-    center: [4.300, 52.070], // [lng, lat] – The Hague
+    center: [4.300, 52.070],
     zoom: 12
   });
 
-  // ➕ Zoom / rotation controls
   map.addControl(new mapboxgl.NavigationControl(), "bottom-right");
 
+  /* --------------------------------------------------
+     NO-FLY ZONES
+  -------------------------------------------------- */
 
-  /* ----------------------------------------------------
-     No-fly zones layer (background)
-     ---------------------------------------------------- */
-/* ----------------------------------------------------
-   No-fly zones layer (background)
-   ---------------------------------------------------- */
   function addNoFlyLayer() {
-    // Source for no-fly polygons
     if (!map.getSource("nofly-zones")) {
       map.addSource("nofly-zones", {
         type: "geojson",
         data: NOFLY_GEOJSON_URL
       });
     }
-  
-    // Filled polygon (blue, 0.2 opacity)
+
     if (!map.getLayer("nofly-zones-fill")) {
       map.addLayer({
         id: "nofly-zones-fill",
@@ -153,8 +129,7 @@
         }
       });
     }
-  
-    // Dotted outline (blue, 1px)
+
     if (!map.getLayer("nofly-zones-outline")) {
       map.addLayer({
         id: "nofly-zones-outline",
@@ -170,32 +145,38 @@
     }
   }
 
+  /* --------------------------------------------------
+     DRONE LINES
+  -------------------------------------------------- */
 
-  /* ----------------------------------------------------
-     Drone lines layer (foreground)
-     ---------------------------------------------------- */
-/* ----------------------------------------------------
-   Drone lines layer (foreground)
-   ---------------------------------------------------- */
   function addDroneLayer() {
-    // Source for drone lines
     if (!map.getSource("drone-lines")) {
       map.addSource("drone-lines", {
         type: "geojson",
-        data: DRONES_GEOJSON_URL
+        data: DRONES_GEOJSON_URL,
+        generateId: true
       });
     }
-  
-    // Lines on top of no-fly layers
+
     if (!map.getLayer("drone-lines-layer")) {
       map.addLayer({
         id: "drone-lines-layer",
         type: "line",
         source: "drone-lines",
         paint: {
-          "line-color": "#fc2ddd",  // your pink
-          "line-width": 1,
-          "line-opacity": 0.5       // overlapping strokes naturally look brighter
+          "line-color": [
+            "case",
+            ["boolean", ["feature-state", "selected"], false],
+            "#ffff00",   // selected = yellow
+            "#fc2ddd"    // default = pink
+          ],
+          "line-width": [
+            "case",
+            ["boolean", ["feature-state", "selected"], false],
+            2,
+            1
+          ],
+          "line-opacity": 0.3
         },
         layout: {
           "line-cap": "round",
@@ -203,30 +184,51 @@
         }
       });
     }
-  
-    // Add popup + hover only once
+
     if (!droneEventsAdded) {
       droneEventsAdded = true;
-  
+
       map.on("click", "drone-lines-layer", (e) => {
-        const p = e.features[0].properties || {};
-  
+        const feature = e.features[0];
+        const p = feature.properties || {};
+        const id = feature.id;
+
+        // Reset previous selection
+        if (selectedFeatureId !== null) {
+          map.setFeatureState(
+            { source: "drone-lines", id: selectedFeatureId },
+            { selected: false }
+          );
+        }
+
+        // Set new selection
+        if (id !== undefined && id !== null) {
+          selectedFeatureId = id;
+          map.setFeatureState(
+            { source: "drone-lines", id: id },
+            { selected: true }
+          );
+        }
+
+        // Popup HTML
         const html = `
           <div style="font-size:13px; line-height:1.4;">
             <strong>Type drone:</strong> ${p.drone_type || "-"}<br>
             <strong>Gemiddelde hoogte:</strong> ${p.gem_hoogte || "-"}<br>
             <strong>Gebruik:</strong> ${p.type || "-"}<br>
-            <strong>tijdsduur in sec.:</strong> ${p.tijdsduur_s || "-"}<br>
+            <strong>Starttijd:</strong> ${formatDateTime(p.tijd_start)}<br>
+            <strong>Eindtijd:</strong> ${formatDateTime(p.tijd_end)}<br>
+            <strong>tijdsduur in sec.:</strong> ${formatDuration(p.tijdsduur_s)}<br>
             <strong>afstand in m.:</strong> ${p.lengte_m || "-"}
           </div>
         `;
-  
+
         new mapboxgl.Popup()
           .setLngLat(e.lngLat)
           .setHTML(html)
           .addTo(map);
       });
-  
+
       map.on("mouseenter", "drone-lines-layer", () => {
         map.getCanvas().style.cursor = "pointer";
       });
@@ -235,110 +237,70 @@
       });
     }
   }
-  
 
-  /* ----------------------------------------------------
-     Initial load: add both layers + prepare date filter
-     ---------------------------------------------------- */
-  map.on("load", () => {
-    addNoFlyLayer();      // background
-    addDroneLayer();      // foreground
-    prepareDateFilter();  // build tijd_start date range + apply initial filter
-  });
+  /* --------------------------------------------------
+     DATE FILTER
+  -------------------------------------------------- */
 
-
-  /* ----------------------------------------------------
-     Basemap selector – keep layers + filter after style change
-     ---------------------------------------------------- */
-  const basemapSelect = document.getElementById("basemap-select");
-  basemapSelect.value = currentStyle; // make dropdown match the current style
-
-
-  basemapSelect.addEventListener("change", (event) => {
-    const newStyle = event.target.value;
-    currentStyle = newStyle;
-
-    // Change style
-    map.setStyle(currentStyle);
-
-    // After style reload, re-add layers and re-apply filter
-    map.once("style.load", () => {
-      addNoFlyLayer();
-      addDroneLayer();
-      updateDateFilter(); // re-apply date filter to new style
-      console.log("Basemap switched to:", currentStyle);
-    });
-  });
-
-
-  /* ----------------------------------------------------
-     Date range filter on tijd_start (by day)
-     ---------------------------------------------------- */
-
-  // Format "YYYY-MM-DD" -> "dd-mm-yyyy"
-  function formatDateDisplay(isoDateStr) {
-    if (!isoDateStr || isoDateStr.length < 10) return "-";
-    const y = isoDateStr.slice(0, 4);
-    const m = isoDateStr.slice(5, 7);
-    const d = isoDateStr.slice(8, 10);
-    return `${d}-${m}-${y}`;
+  function formatDateTime(value) {
+    if (!value) return "-";
+    const s = String(value);
+    const date = s.slice(0, 10);
+    const time = s.length >= 19 ? s.slice(11, 19) : "";
+    if (date.length !== 10) return value;
+    const y = date.slice(0, 4);
+    const m = date.slice(5, 7);
+    const d = date.slice(8, 10);
+    return `${d}-${m}-${y}${time ? " " + time : ""}`;
   }
 
-  // Build the date list and init sliders
+  function formatDuration(secondsValue) {
+    if (!secondsValue) return "-";
+    const total = parseInt(secondsValue, 10);
+    if (isNaN(total)) return "-";
+    const minutes = Math.floor(total / 60);
+    const seconds = total % 60;
+    return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  function formatDateDisplay(d) {
+    if (!d || d.length < 10) return "-";
+    return `${d.slice(8, 10)}-${d.slice(5, 7)}-${d.slice(0, 4)}`;
+  }
+
   function prepareDateFilter() {
     fetch(DRONES_GEOJSON_URL)
-      .then(resp => resp.json())
+      .then(r => r.json())
       .then(data => {
-        const dateSet = new Set();
+        const set = new Set();
 
-        (data.features || []).forEach(f => {
-          const p = f.properties || {};
-          if (p.tijd_start) {
-            // Take only the date part (assumes "YYYY-MM-DD..." format)
-            const datePart = String(p.tijd_start).slice(0, 10);
-            if (datePart.length === 10) {
-              dateSet.add(datePart);
-            }
+        data.features.forEach(f => {
+          const val = f.properties.tijd_start;
+          if (val) {
+            const datePart = String(val).slice(0, 10);
+            if (datePart.length === 10) set.add(datePart);
           }
         });
 
-        uniqueDates = Array.from(dateSet).sort(); // chronological
+        uniqueDates = Array.from(set).sort();
 
-        if (uniqueDates.length === 0) {
-          // No valid dates -> disable sliders
-          dateMinSlider.disabled = true;
-          dateMaxSlider.disabled = true;
-          dateMinLabel.textContent = "geen data";
-          dateMaxLabel.textContent = "geen data";
-          return;
-        }
+        if (uniqueDates.length === 0) return;
 
-        // Slider range = indices in uniqueDates[]
         dateMinSlider.min = 0;
         dateMinSlider.max = uniqueDates.length - 1;
         dateMaxSlider.min = 0;
         dateMaxSlider.max = uniqueDates.length - 1;
 
-        // Default range: full span
         dateMinSlider.value = 0;
         dateMaxSlider.value = uniqueDates.length - 1;
 
-        // Labels
         dateMinLabel.textContent = formatDateDisplay(uniqueDates[0]);
-        dateMaxLabel.textContent = formatDateDisplay(
-          uniqueDates[uniqueDates.length - 1]
-        );
+        dateMaxLabel.textContent = formatDateDisplay(uniqueDates.slice(-1)[0]);
 
-        // React to slider changes
         dateMinSlider.addEventListener("input", updateDateFilter);
         dateMaxSlider.addEventListener("input", updateDateFilter);
 
-        // Apply initial filter
         updateDateFilter();
-      })
-      .catch(err => {
-        console.error("Error building date filter:", err);
-        // If it fails, we just show all data
       });
   }
 
@@ -346,26 +308,17 @@
     if (!uniqueDates.length) return;
     if (!map.getLayer("drone-lines-layer")) return;
 
-    // Slider positions -> indices -> date strings
-    let minIndex = parseInt(dateMinSlider.value, 10);
-    let maxIndex = parseInt(dateMaxSlider.value, 10);
+    let minI = parseInt(dateMinSlider.value);
+    let maxI = parseInt(dateMaxSlider.value);
 
-    // Ensure min <= max
-    if (minIndex > maxIndex) {
-      const tmp = minIndex;
-      minIndex = maxIndex;
-      maxIndex = tmp;
-    }
+    if (minI > maxI) [minI, maxI] = [maxI, minI];
 
-    const minDate = uniqueDates[minIndex];
-    const maxDate = uniqueDates[maxIndex];
+    const minDate = uniqueDates[minI];
+    const maxDate = uniqueDates[maxI];
 
-    // Update labels in dd-mm-yyyy
     dateMinLabel.textContent = formatDateDisplay(minDate);
     dateMaxLabel.textContent = formatDateDisplay(maxDate);
 
-    // Mapbox filter: tijd_start date between minDate and maxDate (inclusive)
-    // We compare first 10 chars "YYYY-MM-DD" as strings (works chronologically)
     const filter = [
       "all",
       [">=", ["slice", ["get", "tijd_start"], 0, 10], minDate],
@@ -374,6 +327,32 @@
 
     map.setFilter("drone-lines-layer", filter);
   }
+
+  /* --------------------------------------------------
+     LOAD + BASEMAP SWITCH
+  -------------------------------------------------- */
+
+  map.on("load", () => {
+    addNoFlyLayer();
+    addDroneLayer();
+    prepareDateFilter();
+  });
+
+  const basemapSelect = document.getElementById("basemap-select");
+  basemapSelect.value = currentStyle;
+
+  basemapSelect.addEventListener("change", e => {
+    currentStyle = e.target.value;
+    map.setStyle(currentStyle);
+
+    map.once("style.load", () => {
+      droneEventsAdded = false;
+      selectedFeatureId = null;
+      addNoFlyLayer();
+      addDroneLayer();
+      updateDateFilter();
+    });
+  });
 </script>
 
 </body>
