@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Drone Map – Basemap Test</title>
+  <title>Drone Map – Basemap + Data</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <!-- Mapbox CSS -->
@@ -68,10 +68,13 @@
     // 🔑 1) Put your Mapbox *public* access token here (must start with "pk.")
     mapboxgl.accessToken = "pk.eyJ1IjoidGltbWFwcGVyIiwiYSI6ImNrcWpjbDBnbzAwbTYyd3IwM2c0NDRlZ3MifQ.VlYKg7MxpFRu3frs1aGhOQ";
 
-    // 🌍 2) Default basemap style (can be changed via the dropdown)
+    // 🌍 Default basemap style
     let currentStyle = "mapbox://styles/mapbox/streets-v12";
 
-    // 🗺️ 3) Create the map, centered on The Hague
+    // 📁 GeoJSON filename (must exist in the same folder as this index.html)
+    const GEOJSON_URL = "drones_lines3_wg84.geojson";
+
+    // 🗺️ 2) Create the map, centered on The Hague
     const map = new mapboxgl.Map({
       container: "map",
       style: currentStyle,
@@ -81,6 +84,64 @@
 
     // ➕ Zoom / rotation controls in bottom-right
     map.addControl(new mapboxgl.NavigationControl(), "bottom-right");
+
+    // 🔁 Helper: add the drone source + layer (so we can call it on load and after style change)
+    function addDroneLayer() {
+      // Add source if not already there
+      if (!map.getSource("drone-lines")) {
+        map.addSource("drone-lines", {
+          type: "geojson",
+          data: GEOJSON_URL // load your drone lines
+        });
+      }
+
+      // Add line layer if not already there
+      if (!map.getLayer("drone-lines-layer")) {
+        map.addLayer({
+          id: "drone-lines-layer",
+          type: "line",
+          source: "drone-lines",
+          paint: {
+            "line-color": "#e63946",  // red lines
+            "line-width": 3,
+            "line-opacity": 0.9
+          }
+        });
+
+        // Add popup interaction when user clicks a line
+        map.on("click", "drone-lines-layer", (e) => {
+          const p = e.features[0].properties || {};
+
+          // Simple popup template – uses your field names
+          const html = `
+            <div style="font-size:13px">
+              <strong>${p.type || "Drone flight"}</strong><br>
+              <strong>Start time:</strong> ${p.tijd_start || "-"}<br>
+              <strong>No-fly (p_no_fly):</strong> ${p.p_no_fly || "-"}<br>
+              <strong>Above 120m (p_h120m):</strong> ${p.p_h120m || "-"}
+            </div>
+          `;
+
+          new mapboxgl.Popup()
+            .setLngLat(e.lngLat)
+            .setHTML(html)
+            .addTo(map);
+        });
+
+        // Change cursor over lines
+        map.on("mouseenter", "drone-lines-layer", () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseleave", "drone-lines-layer", () => {
+          map.getCanvas().style.cursor = "";
+        });
+      }
+    }
+
+    // 🚀 3) When the map first loads, add the drone layer
+    map.on("load", () => {
+      addDroneLayer();
+    });
 
     // 🔄 4) Basemap selector logic
     const basemapSelect = document.getElementById("basemap-select");
@@ -92,9 +153,9 @@
       // Change the style
       map.setStyle(currentStyle);
 
-      // (Later we will re-add data layers in a style.load event)
+      // Re-add the drone layer once the new style is ready
       map.once("style.load", () => {
-        // For now: nothing to re-add – just keep the basemap
+        addDroneLayer();
         console.log("Basemap switched to:", currentStyle);
       });
     });
