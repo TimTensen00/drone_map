@@ -104,6 +104,14 @@
     const DRONES_GEOJSON_URL = "drones_lines3_wg84.geojson";
     const NOFLY_GEOJSON_URL  = "noflyzones.geojson";
 
+        // Date filter state (tijd_start)
+    let uniqueDates = []; // array of "YYYY-MM-DD" strings
+    const dateMinSlider = document.getElementById("date-min-slider");
+    const dateMaxSlider = document.getElementById("date-max-slider");
+    const dateMinLabel  = document.getElementById("date-min-label");
+    const dateMaxLabel  = document.getElementById("date-max-label");
+
+
     // 🗺️ Create the map, centered on The Hague
     const map = new mapboxgl.Map({
       container: "map",
@@ -220,10 +228,12 @@
     /* ----------------------------------------------------
        Initial load: add both layers (no-fly first, then drones)
        ---------------------------------------------------- */
-    map.on("load", () => {
-      addNoFlyLayer();   // background
-      addDroneLayer();   // foreground
-    });
+      map.on("load", () => {
+        addNoFlyLayer();   // background
+        addDroneLayer();   // foreground
+        prepareDateFilter(); // set up tijd_start slider after data is loaded
+      });
+
 
     /* ----------------------------------------------------
        Basemap selector – keep layers after style change
@@ -244,6 +254,107 @@
         console.log("Basemap switched to:", currentStyle);
       });
     });
+/* ----------------------------------------------------
+   Date range filter on tijd_start (by day)
+   ---------------------------------------------------- */
+
+// Helper: format "YYYY-MM-DD" -> "dd-mm-yyyy"
+function formatDateDisplay(isoDateStr) {
+  if (!isoDateStr || isoDateStr.length < 10) return "-";
+  const y = isoDateStr.slice(0, 4);
+  const m = isoDateStr.slice(5, 7);
+  const d = isoDateStr.slice(8, 10);
+  return `${d}-${m}-${y}`;
+}
+
+// Read all tijd_start dates from the drone GeoJSON and init sliders
+function prepareDateFilter() {
+  fetch(DRONES_GEOJSON_URL)
+    .then(resp => resp.json())
+    .then(data => {
+      const dateSet = new Set();
+
+      (data.features || []).forEach(f => {
+        const p = f.properties || {};
+        if (p.tijd_start) {
+          // take only the date part (assumes "YYYY-MM-DD..." format)
+          const datePart = String(p.tijd_start).slice(0, 10);
+          if (datePart.length === 10) {
+            dateSet.add(datePart);
+          }
+        }
+      });
+
+      uniqueDates = Array.from(dateSet).sort(); // chronological
+
+      if (uniqueDates.length === 0) {
+        // no dates found -> disable sliders
+        dateMinSlider.disabled = true;
+        dateMaxSlider.disabled = true;
+        dateMinLabel.textContent = "geen data";
+        dateMaxLabel.textContent = "geen data";
+        return;
+      }
+
+      // Setup slider min/max (index into uniqueDates array)
+      dateMinSlider.min = 0;
+      dateMinSlider.max = uniqueDates.length - 1;
+      dateMaxSlider.min = 0;
+      dateMaxSlider.max = uniqueDates.length - 1;
+
+      // Default range: full span
+      dateMinSlider.value = 0;
+      dateMaxSlider.value = uniqueDates.length - 1;
+
+      // Show labels
+      dateMinLabel.textContent = formatDateDisplay(uniqueDates[0]);
+      dateMaxLabel.textContent = formatDateDisplay(uniqueDates[uniqueDates.length - 1]);
+
+      // Update when sliders move
+      dateMinSlider.addEventListener("input", updateDateFilter);
+      dateMaxSlider.addEventListener("input", updateDateFilter);
+
+      // Apply initial filter
+      updateDateFilter();
+    })
+    .catch(err => {
+      console.error("Error building date filter:", err);
+      // if something goes wrong, keep all data visible
+    });
+}
+
+function updateDateFilter() {
+  if (!uniqueDates.length) return;
+  if (!map.getLayer("drone-lines-layer")) return;
+
+  // Slider positions -> indices -> date strings
+  let minIndex = parseInt(dateMinSlider.value, 10);
+  let maxIndex = parseInt(dateMaxSlider.value, 10);
+
+  // Ensure min <= max
+  if (minIndex > maxIndex) {
+    const tmp = minIndex;
+    minIndex = maxIndex;
+    maxIndex = tmp;
+  }
+
+  const minDate = uniqueDates[minIndex];
+  const maxDate = uniqueDates[maxIndex];
+
+  dateMinLabel.textContent = formatDateDisplay(minDate);
+  dateMaxLabel.textContent = formatDateDisplay(maxDate);
+
+  // Filter: tijd_start date between minDate and maxDate (inclusive)
+  // Compare the first 10 chars "YYYY-MM-DD" as strings -> works chronologically
+  const filter = [
+    "all",
+    [">=", ["slice", ["get", "tijd_start"], 0, 10], minDate],
+    ["<=", ["slice", ["get", "tijd_start"], 0, 10], maxDate]
+  ];
+
+  map.setFilter("drone-lines-layer", filter);
+}
+
   </script>
 </body>
 </html>
