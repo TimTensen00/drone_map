@@ -58,7 +58,7 @@
   </select>
 
   <div style="margin-top:10px;">
-    <label>Datum (tijd_start):</label>
+    <label>Filter op datum:</label>
 
     <div style="font-size:12px;">Van: <span id="date-min-label">–</span></div>
     <input type="range" id="date-min-slider" min="0" max="0" value="0" step="1" />
@@ -176,7 +176,7 @@
             2,
             1
           ],
-          "line-opacity": 0.3
+          "line-opacity": 0.6
         },
         layout: {
           "line-cap": "round",
@@ -214,12 +214,12 @@
         const html = `
           <div style="font-size:13px; line-height:1.4;">
             <strong>Type drone:</strong> ${p.drone_type || "-"}<br>
-            <strong>Gemiddelde hoogte:</strong> ${p.gem_hoogte || "-"}<br>
+            <strong>Gemiddelde hoogte in m.:</strong> ${p.gem_hoogte || "-"}<br>
             <strong>Gebruik:</strong> ${p.type || "-"}<br>
             <strong>Starttijd:</strong> ${formatDateTime(p.tijd_start)}<br>
             <strong>Eindtijd:</strong> ${formatDateTime(p.tijd_end)}<br>
-            <strong>tijdsduur in sec.:</strong> ${formatDuration(p.tijdsduur_s)}<br>
-            <strong>afstand in m.:</strong> ${p.lengte_m || "-"}
+            <strong>tijdsduur in min.:</strong> ${formatDuration(p.tijdsduur_s)}<br>
+            <strong>Afstand in m.:</strong> ${p.lengte_m || "-"}
           </div>
         `;
 
