@@ -160,21 +160,24 @@
       // Popups when clicking a drone line
       map.on("click", "drone-lines-layer", (e) => {
         const p = e.features[0].properties || {};
-
+      
         const html = `
-          <div style="font-size:13px">
-            <strong>${p.type || "Drone flight"}</strong><br>
-            <strong>Start time:</strong> ${p.tijd_start || "-"}<br>
-            <strong>No-fly (p_no_fly):</strong> ${p.p_no_fly || "-"}<br>
-            <strong>Above 120m (p_h120m):</strong> ${p.p_h120m || "-"}
+          <div style="font-size:13px; line-height:1.4;">
+            <strong>Type drone:</strong> ${p.drone_type || "-"}<br>
+            <strong>Gemiddelde hoogte:</strong> ${p.gem_hoogte || "-"}<br>
+            <strong>Gebruik:</strong> ${p.type || "-"}<br>
+            <strong>tijdsduur in sec.:</strong> ${p.tijdsduur_s || "-"}<br>
+            <strong>afstand in m.:</strong> ${p.lengte_m || "-"}
           </div>
         `;
-
+      
         new mapboxgl.Popup()
           .setLngLat(e.lngLat)
           .setHTML(html)
           .addTo(map);
       });
+
+
 
       // Pointer cursor over drone lines
       map.on("mouseenter", "drone-lines-layer", () => {
