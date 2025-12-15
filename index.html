@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Drone Map – Basemap + Data</title>
+  <title>Drone Map – Basemap + No-fly Zones + Data</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <!-- Mapbox CSS -->
@@ -65,16 +65,17 @@
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.js"></script>
 
   <script>
-    // 🔑 1) Put your Mapbox *public* access token here (must start with "pk.")
+    // 🔑 Put your Mapbox *public* access token here (must start with "pk.")
     mapboxgl.accessToken = "pk.eyJ1IjoidGltbWFwcGVyIiwiYSI6ImNrcWpjbDBnbzAwbTYyd3IwM2c0NDRlZ3MifQ.VlYKg7MxpFRu3frs1aGhOQ";
 
     // 🌍 Default basemap style
     let currentStyle = "mapbox://styles/mapbox/streets-v12";
 
-    // 📁 GeoJSON filename (must exist in the same folder as this index.html)
-    const GEOJSON_URL = "drones_lines3_wg84.geojson";
+    // 📁 GeoJSON filenames (must be in the same folder as this index.html)
+    const DRONES_GEOJSON_URL = "drones_lines3_wg84.geojson";
+    const NOFLY_GEOJSON_URL  = "noflyzones.geojson";
 
-    // 🗺️ 2) Create the map, centered on The Hague
+    // 🗺️ Create the map, centered on The Hague
     const map = new mapboxgl.Map({
       container: "map",
       style: currentStyle,
@@ -82,68 +83,115 @@
       zoom: 12
     });
 
-    // ➕ Zoom / rotation controls in bottom-right
+    // ➕ Zoom / rotation controls
     map.addControl(new mapboxgl.NavigationControl(), "bottom-right");
 
-    // 🔁 Helper: add the drone source + layer (so we can call it on load and after style change)
-    function addDroneLayer() {
-      // Add source if not already there
-      if (!map.getSource("drone-lines")) {
-        map.addSource("drone-lines", {
+    /* ----------------------------------------------------
+       Helper: add no-fly zones (below drone lines)
+       ---------------------------------------------------- */
+    function addNoFlyLayer() {
+      // Add no-fly source
+      if (!map.getSource("nofly-zones")) {
+        map.addSource("nofly-zones", {
           type: "geojson",
-          data: GEOJSON_URL // load your drone lines
+          data: NOFLY_GEOJSON_URL
         });
       }
 
-      // Add line layer if not already there
+      // Filled polygon (blue, 0.2 opacity)
+      if (!map.getLayer("nofly-zones-fill")) {
+        map.addLayer({
+          id: "nofly-zones-fill",
+          type: "fill",
+          source: "nofly-zones",
+          paint: {
+            "fill-color": "#1e90ff",   // blue
+            "fill-opacity": 0.2
+          }
+        });
+      }
+
+      // Dotted outline (blue, 1px)
+      if (!map.getLayer("nofly-zones-outline")) {
+        map.addLayer({
+          id: "nofly-zones-outline",
+          type: "line",
+          source: "nofly-zones",
+          paint: {
+            "line-color": "#1e90ff",
+            "line-width": 1,
+            "line-dasharray": [2, 2],  // dotted/ dashed line
+            "line-opacity": 0.8
+          }
+        });
+      }
+    }
+
+    /* ----------------------------------------------------
+       Helper: add drone lines (above no-fly zones)
+       ---------------------------------------------------- */
+    function addDroneLayer() {
+      // Add source for drone lines
+      if (!map.getSource("drone-lines")) {
+        map.addSource("drone-lines", {
+          type: "geojson",
+          data: DRONES_GEOJSON_URL
+        });
+      }
+
+      // Purple lines (1px, 0.3 opacity), on top of no-fly layers
       if (!map.getLayer("drone-lines-layer")) {
         map.addLayer({
           id: "drone-lines-layer",
           type: "line",
           source: "drone-lines",
           paint: {
-            "line-color": "#e63946",  // red lines
-            "line-width": 3,
-            "line-opacity": 0.9
+            "line-color": "#7e3ff2",   // purple
+            "line-width": 1,
+            "line-opacity": 0.3
           }
         });
-
-        // Add popup interaction when user clicks a line
-        map.on("click", "drone-lines-layer", (e) => {
-          const p = e.features[0].properties || {};
-
-          // Simple popup template – uses your field names
-          const html = `
-            <div style="font-size:13px">
-              <strong>${p.type || "Drone flight"}</strong><br>
-              <strong>Start time:</strong> ${p.tijd_start || "-"}<br>
-              <strong>No-fly (p_no_fly):</strong> ${p.p_no_fly || "-"}<br>
-              <strong>Above 120m (p_h120m):</strong> ${p.p_h120m || "-"}
-            </div>
-          `;
-
-          new mapboxgl.Popup()
-            .setLngLat(e.lngLat)
-            .setHTML(html)
-            .addTo(map);
-        });
-
-        // Change cursor over lines
-        map.on("mouseenter", "drone-lines-layer", () => {
-          map.getCanvas().style.cursor = "pointer";
-        });
-        map.on("mouseleave", "drone-lines-layer", () => {
-          map.getCanvas().style.cursor = "";
-        });
       }
+
+      // Popups when clicking a drone line
+      map.on("click", "drone-lines-layer", (e) => {
+        const p = e.features[0].properties || {};
+
+        const html = `
+          <div style="font-size:13px">
+            <strong>${p.type || "Drone flight"}</strong><br>
+            <strong>Start time:</strong> ${p.tijd_start || "-"}<br>
+            <strong>No-fly (p_no_fly):</strong> ${p.p_no_fly || "-"}<br>
+            <strong>Above 120m (p_h120m):</strong> ${p.p_h120m || "-"}
+          </div>
+        `;
+
+        new mapboxgl.Popup()
+          .setLngLat(e.lngLat)
+          .setHTML(html)
+          .addTo(map);
+      });
+
+      // Pointer cursor over drone lines
+      map.on("mouseenter", "drone-lines-layer", () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", "drone-lines-layer", () => {
+        map.getCanvas().style.cursor = "";
+      });
     }
 
-    // 🚀 3) When the map first loads, add the drone layer
+    /* ----------------------------------------------------
+       Initial load: add both layers (no-fly first, then drones)
+       ---------------------------------------------------- */
     map.on("load", () => {
-      addDroneLayer();
+      addNoFlyLayer();   // background
+      addDroneLayer();   // foreground
     });
 
-    // 🔄 4) Basemap selector logic
+    /* ----------------------------------------------------
+       Basemap selector – keep layers after style change
+       ---------------------------------------------------- */
     const basemapSelect = document.getElementById("basemap-select");
 
     basemapSelect.addEventListener("change", (event) => {
@@ -153,8 +201,9 @@
       // Change the style
       map.setStyle(currentStyle);
 
-      // Re-add the drone layer once the new style is ready
+      // Re-add both layers once the new style has loaded
       map.once("style.load", () => {
+        addNoFlyLayer();
         addDroneLayer();
         console.log("Basemap switched to:", currentStyle);
       });
